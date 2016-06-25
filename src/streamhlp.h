@@ -23,7 +23,7 @@ int InitStreamingHlp(eglGetProcAddress_PTR GetProcAddress);
 int StreamingHlpAvailable();
 
 // create a new streaming texture. Return ID of the texture, or -1 if failed
-int CreateStreamTexture(int width, int height, STREAMHLP_FORMAT type);
+int CreateStreamTexture(int width, int height, STREAMHLP_FORMAT type, int nbuff);
 
 // delete a previously created texture
 void DeleteStreamedTexture(int ID);
