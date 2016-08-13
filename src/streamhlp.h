@@ -5,6 +5,10 @@
 #define GL_TEXTURE_STREAM_IMG                                   0x8C0D     
 #endif
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef void (*__eglMustCastToProperFunctionPointerType)(void);
 typedef __eglMustCastToProperFunctionPointerType (*eglGetProcAddress_PTR)(const char * procname);
 
@@ -33,5 +37,9 @@ void BindStreamedTexture(int ID, unsigned int buffer);
 
 // Function to get a Streaming buffer address
 void* GetStreamingBuffer(int ID, unsigned int buffer);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif //_STREAMING_H_
