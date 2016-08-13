@@ -5,6 +5,7 @@
 #include <sys/mman.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "streamhlp.h"
 
@@ -30,7 +31,7 @@ typedef void (GL_APIENTRYP PFNGLGETTEXSTREAMDEVICEATTRIBUTEIVIMGPROC) (GLenum ta
 #endif
 
 #ifndef BC_PIX_FMT_ARGB
-#define BC_PIX_FMT_ARGB     BC_FOURCC('A', 'R', 'G', 'B') /*ARGB 8:8:8:8*/
+#define BC_PIX_FMT_ARGB     BC_FOURCC('A', 'R', 'G', 'B')
 #endif
 
 static PFNGLTEXBINDSTREAMIMGPROC *glTexBindStreamIMG = NULL;
@@ -44,8 +45,13 @@ static int tex_free[10];
 static const GLubyte * bcdev[10];
 static int bcdev_w, bcdev_h, bcdev_n;
 static int bcdev_fmt;
-static unsigned long buf_paddr[10];    // physical address
-static char *buf_vaddr[10];            // virtual adress
+static struct {
+	unsigned long *buf_paddr;
+	char		  **buf_vaddr;
+	unsigned int 	n_buff;
+} buffers[10];
+//static unsigned long buf_paddr[10];    // physical address
+//static char *buf_vaddr[10];            // virtual adress
 
 static void Streaming_Initialize(eglGetProcAddress_PTR GetProcAddress) {
 	if (gl_streaming_initialized)
@@ -137,19 +143,24 @@ static int alloc_buff(int buff, int width, int height, unsigned long fourcc, int
     gles_glTexParameterf(GL_TEXTURE_STREAM_IMG, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     gles_glTexParameterf(GL_TEXTURE_STREAM_IMG, GL_TEXTURE_MAG_FILTER, GL_LINEAR);*/
 	
-	ioctl_var.input = 0;
-	if (ioctl(bc_cat[buff], BCIOGET_BUFFERPHYADDR, &ioctl_var) != 0) {
-		fprintf(stderr, "StreamHlp: BCIOGET_BUFFERADDR failed\n");
-		return 0;
-	} else {
-		buf_paddr[buff] = ioctl_var.output;
-		buf_vaddr[buff] = (char *)mmap(NULL, (width*height*mem_mul)/mem_div,
-						  PROT_READ | PROT_WRITE, MAP_SHARED,
-						  bc_cat[buff], buf_paddr[buff]);
-
-		if (buf_vaddr[buff] == MAP_FAILED) {
-			fprintf(stderr, "StreamHlp: mmap failed\n");
+	buffers[buff].buf_paddr = (unsigned long*)malloc(sizeof(unsigned long)*buffs);
+	buffers[buff].buf_vaddr = (char**)malloc(sizeof(char*)*buffs);
+	buffers[buff].n_buff = buffs;
+	for (int idx=0; idx<buffs; idx++) {
+		ioctl_var.input = idx;
+		if (ioctl(bc_cat[buff], BCIOGET_BUFFERPHYADDR, &ioctl_var) != 0) {
+			fprintf(stderr, "StreamHlp: BCIOGET_BUFFERADDR failed\n");
 			return 0;
+		} else {
+			buffers[buff].buf_paddr[idx] = ioctl_var.output;
+			buffers[buff].buf_vaddr[idx] = (char *)mmap(NULL, (width*height*mem_mul)/mem_div,
+							  PROT_READ | PROT_WRITE, MAP_SHARED,
+							  bc_cat[buff], buffers[buff].buf_paddr[idx]);
+
+			if (buffers[buff].buf_vaddr[idx] == MAP_FAILED) {
+				fprintf(stderr, "StreamHlp: mmap failed\n");
+				return 0;
+			}
 		}
 	}
 	
@@ -164,7 +175,11 @@ static int free_buff(int buff) {
 		return 0;
 	if ((buff<0) || (buff>9))
 		return 0;
-	munmap(buf_vaddr[buff], tex_free[buff]);
+	for (int idx = 0; idx < buffers[buff].n_buff; idx++)
+		munmap(buffers[buff].buf_vaddr[idx], tex_free[buff]);
+	free(buffers[buff].buf_paddr);
+	free(buffers[buff].buf_vaddr);
+	buffers[buff].n_buff = 0;
     close_bccat(buff);
 	tex_free[buff] = 0;
 	return 1;
@@ -203,7 +218,7 @@ int StreamingHlpAvailable() {
 }
 
 // Function to get a Streaming buffer address
-void* GetStreamingBuffer(int ID) {
+void* GetStreamingBuffer(int ID, unsigned int buff) {
 //printf("GetStreamingBuffer(%i)\n", buff);
 	if (!gl_streaming)
 		return NULL;
@@ -211,7 +226,7 @@ void* GetStreamingBuffer(int ID) {
 		return NULL;
 	if (!tex_free[ID])
 		return NULL;
-	return buf_vaddr[ID];
+	return buffers[ID].buf_vaddr[buff];
 }
 
 // Function to free a streamed texture ID
@@ -264,7 +279,7 @@ int CreateStreamTexture(int width, int height, STREAMHLP_FORMAT type, int nbuff)
 	return -1;
 }
 
-void BindStreamedTexture(int ID, unsigned int offset) {
+void BindStreamedTexture(int ID, unsigned int buffer) {
 	if (!gl_streaming)
 		return;
 	if (ID==-1) {
@@ -278,5 +293,5 @@ void BindStreamedTexture(int ID, unsigned int offset) {
 	if (!stream_cache[ID].active)
 		return;
 
-	glTexBindStreamIMG(ID, offset);
+	glTexBindStreamIMG(ID, buffer);
 }

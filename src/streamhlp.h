@@ -29,9 +29,9 @@ int CreateStreamTexture(int width, int height, STREAMHLP_FORMAT type, int nbuff)
 void DeleteStreamedTexture(int ID);
 
 // To bind a streaming texture in current texture unit (don't forget to glEnabled(GL_TEXTURE_STREAM_IMG))
-void BindStreamedTexture(int ID, unsigned int offset);
+void BindStreamedTexture(int ID, unsigned int buffer);
 
 // Function to get a Streaming buffer address
-void* GetStreamingBuffer(int ID);
+void* GetStreamingBuffer(int ID, unsigned int buffer);
 
 #endif //_STREAMING_H_
