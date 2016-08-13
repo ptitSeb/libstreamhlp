@@ -18,4 +18,5 @@ if(CMAKE_SHARED_LIBRARY_SUFFIX MATCHES ".so")
     set_target_properties(streamhlp PROPERTIES SUFFIX ".so.1")
 endif()
 
+add_library(streamhlp_static STATIC ${SOURCES})
 
