@@ -9,6 +9,13 @@
 
 #include "streamhlp.h"
 
+//#define DEBUG
+#ifdef DEBUG
+#define LOGD(a) a
+#else
+#define LOGD(a)
+#endif
+
 typedef int GLint;
 typedef unsigned int GLuint;
 typedef unsigned char GLubyte;
@@ -75,6 +82,7 @@ static void Streaming_Initialize(eglGetProcAddress_PTR GetProcAddress) {
 }
 
 static int open_bccat(int i) {
+LOGD(printf("open_bccat(%d)\n", i);)
 	if (bc_cat[i]>-1)
 		return bc_cat[i];
 	char buff[]="/dev/bccat0";
@@ -83,6 +91,7 @@ static int open_bccat(int i) {
     return bc_cat[i];
 }
 static void close_bccat(int i) {
+LOGD(printf("close_bccat(%d)\n", i);)
     if (bc_cat[i]==-1)
         return;
     close(bc_cat[i]);
@@ -91,6 +100,7 @@ static void close_bccat(int i) {
 }
 
 static int alloc_buff(int buff, int width, int height, unsigned long fourcc, int mem_mul, int mem_div, int buffs) {
+LOGD(printf("alloc_buff(%d, %d, %d, %c%c%c%c, %d, %d, %d)\n", buff, width, height, fourcc&0xff, (fourcc>>8)&0xff, (fourcc>>16)&0xff, (fourcc>>24)&0xff, mem_mul, mem_div, buffs);)
 	if (!gl_streaming_initialized)
 		Streaming_Initialize;
 	if (!gl_streaming)
@@ -109,20 +119,24 @@ static int alloc_buff(int buff, int width, int height, unsigned long fourcc, int
 	buf_param.fourcc = fourcc;
 	buf_param.type = BC_MEMORY_MMAP;
 	if (ioctl(bc_cat[buff], BCIOREQ_BUFFERS, &buf_param) != 0) {
-		fprintf(stderr, "StreamHlp: BCIOREQ_BUFFERS failed\n");
+		fprintf(stderr, "StreamHlp: BCIOREQ_BUFFERS failed for buffer %d\n", buff);
+		close_bccat(buff);
 		return 0;
 	}
 	if (ioctl(bc_cat[buff], BCIOGET_BUFFERCOUNT, &ioctl_var) != 0) {
-		fprintf(stderr, "StreamHlp: BCIOREQ_BUFFERCOUNT failed\n");
+		fprintf(stderr, "StreamHlp: BCIOREQ_BUFFERCOUNT failed for buffer %d\n", buff);
+		close_bccat(buff);
 		return 0;
 	}
 	if (ioctl_var.output == 0) {
-		fprintf(stderr, "StreamHlp: Streaming, no texture buffer available\n");
+		fprintf(stderr, "StreamHlp: Streaming, no texture buffer available for buffer %d\n", buff);
+		close_bccat(buff);
 		return 0;
 	}
 	const char *bcdev = glGetTexDeviceIMG(buff);
 	if (!bcdev) {
-		fprintf(stderr, "StreamHlp: problem with getting the GL_IMG_texture_stream device\n");
+		fprintf(stderr, "StreamHlp: problem with getting the GL_IMG_texture_stream device for buffer %d\n", buff);
+		close_bccat(buff);
 		return 0;
 	} else {
 		bcdev_w = width;
@@ -132,10 +146,11 @@ static int alloc_buff(int buff, int width, int height, unsigned long fourcc, int
 		glGetTexAttrIMG(buff, GL_TEXTURE_STREAM_DEVICE_WIDTH_IMG, &bcdev_w);
 		glGetTexAttrIMG(buff, GL_TEXTURE_STREAM_DEVICE_HEIGHT_IMG, &bcdev_h);
 		glGetTexAttrIMG(buff, GL_TEXTURE_STREAM_DEVICE_FORMAT_IMG, &bcdev_fmt);
-		fprintf(stderr, "StreamHlp: Streaming device = %s num: %d, width: %d, height: %d, format: 0x%x\n",
-			bcdev, bcdev_n, bcdev_w, bcdev_h, bcdev_fmt);
+		fprintf(stderr, "StreamHlp: Streaming device = %s num: %d, width: %d, height: %d, format: 0x%x for buffer %d\n",
+			bcdev, bcdev_n, bcdev_w, bcdev_h, bcdev_fmt, buff);
 		if (bcdev_w!=width) {
-			printf("StreamHlp: Streaming not activate, buffer width != asked width\n");
+			printf("StreamHlp: Streaming not activate, buffer width != asked width for buffer %d\n", buff);
+			close_bccat(buff);
 			return 0;
 		}
 	}
@@ -149,7 +164,8 @@ static int alloc_buff(int buff, int width, int height, unsigned long fourcc, int
 	for (int idx=0; idx<buffs; idx++) {
 		ioctl_var.input = idx;
 		if (ioctl(bc_cat[buff], BCIOGET_BUFFERPHYADDR, &ioctl_var) != 0) {
-			fprintf(stderr, "StreamHlp: BCIOGET_BUFFERADDR failed\n");
+			fprintf(stderr, "StreamHlp: BCIOGET_BUFFERADDR failed for buffer %d.%d\n", buff, idx);
+			close_bccat(buff);
 			return 0;
 		} else {
 			buffers[buff].buf_paddr[idx] = ioctl_var.output;
@@ -158,19 +174,21 @@ static int alloc_buff(int buff, int width, int height, unsigned long fourcc, int
 							  bc_cat[buff], buffers[buff].buf_paddr[idx]);
 
 			if (buffers[buff].buf_vaddr[idx] == MAP_FAILED) {
-				fprintf(stderr, "StreamHlp: mmap failed\n");
+				fprintf(stderr, "StreamHlp: mmap failed for buffer %d.%d\n", buff, idx);
+				close_bccat(buff);
 				return 0;
 			}
 		}
 	}
 	
-	fprintf(stderr, "StreamHlp: Streaming Texture initialized successfully\n");
+	fprintf(stderr, "StreamHlp: Streaming Texture initialized successfully on buffer %d\n", buff);
 	// All done!
 	tex_free[buff] = (width*height*mem_mul)/mem_div;
 	return 1;
 }
 
 static int free_buff(int buff) {
+LOGD(printf("free_buff(%d)\n", buff);)
 	if (!gl_streaming)
 		return 0;
 	if ((buff<0) || (buff>9))
@@ -197,7 +215,7 @@ static unsigned int frame_number;
 
 // Function to start the Streaming texture Cache
 int InitStreamingHlp(eglGetProcAddress_PTR GetProcAddress) {
-//printf("InitStreamingCache\n");
+LOGD(printf("InitStreamingCache\n");)
 	if (streaming_inited)
 		return gl_streaming;
 	Streaming_Initialize(GetProcAddress);
@@ -219,7 +237,7 @@ int StreamingHlpAvailable() {
 
 // Function to get a Streaming buffer address
 void* GetStreamingBuffer(int ID, unsigned int buff) {
-//printf("GetStreamingBuffer(%i)\n", buff);
+//LOGD(printf("GetStreamingBuffer(%i)\n", buff);)
 	if (!gl_streaming)
 		return NULL;
 	if ((ID<0) || (ID>9))
@@ -231,7 +249,7 @@ void* GetStreamingBuffer(int ID, unsigned int buff) {
 
 // Function to free a streamed texture ID
 void DeleteStreamedTexture(int ID) {
-//printf("FreeStreamed(%i)", ID);
+LOGD(printf("FreeStreamed(%i)\n", ID);)
 	if (!gl_streaming)
 		return;
 	if ((ID<0) || (ID>9))
@@ -248,6 +266,7 @@ void DeleteStreamedTexture(int ID) {
 
 
 int CreateStreamTexture(int width, int height, STREAMHLP_FORMAT type, int nbuff) {
+LOGD(printf("CreateStreamTexture(%d, %d, %d, %d)\n", width, height, type, nbuff);)
 	unsigned long fourcc;
 	int mem_mul;
 	int mem_div;
@@ -280,6 +299,7 @@ int CreateStreamTexture(int width, int height, STREAMHLP_FORMAT type, int nbuff)
 }
 
 void BindStreamedTexture(int ID, unsigned int buffer) {
+//LOGD(printf("BindStreamedTexture(%d, %u)\n", ID, buffer);)
 	if (!gl_streaming)
 		return;
 	if (ID==-1) {
